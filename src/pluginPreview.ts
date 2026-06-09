@@ -13,19 +13,25 @@ export interface BuildPreviewSrcDocOptions {
   manifest: SitePluginManifest;
   rendererUrl: string;
   sampleData: unknown;
+  tile: {
+    width: number;
+    height: number;
+  };
 }
 
 function htmlJson(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, '\\u003c');
+  return (JSON.stringify(value ?? null) ?? 'null').replace(/</g, '\\u003c');
 }
 
 export function buildPreviewSrcDoc({
   manifest,
   rendererUrl,
   sampleData,
+  tile,
 }: BuildPreviewSrcDocOptions): string {
   const manifestJson = htmlJson(manifest);
   const sampleJson = htmlJson(sampleData);
+  const tileJson = htmlJson(tile);
   const rendererUrlLiteral = JSON.stringify(rendererUrl);
 
   return `<!doctype html>
@@ -106,11 +112,13 @@ export function buildPreviewSrcDoc({
   <body>
     <script id="manifest-json" type="application/json">${manifestJson}</script>
     <script id="sample-json" type="application/json">${sampleJson}</script>
+    <script id="tile-json" type="application/json">${tileJson}</script>
     <div id="plugin-root"></div>
     <script type="module">
       const root = document.getElementById('plugin-root');
       const manifest = JSON.parse(document.getElementById('manifest-json').textContent || '{}');
       const sampleData = JSON.parse(document.getElementById('sample-json').textContent || 'null');
+      const tile = JSON.parse(document.getElementById('tile-json').textContent || '{}');
       const rendererUrl = ${rendererUrlLiteral};
 
       function emit(level, message, details) {
@@ -151,6 +159,20 @@ export function buildPreviewSrcDoc({
         emit('error', message, { stack });
       }
 
+      function applyTileMetrics(nextTile) {
+        const width = Number(nextTile && nextTile.width) || 0;
+        const height = Number(nextTile && nextTile.height) || 0;
+        tile.width = width;
+        tile.height = height;
+        root.dataset.tileWidth = String(width);
+        root.dataset.tileHeight = String(height);
+        root.style.setProperty('--wpp-tile-width', width + 'px');
+        root.style.setProperty('--wpp-tile-height', height + 'px');
+        window.dispatchEvent(new CustomEvent('wpp-tile-resize', { detail: { width, height } }));
+      }
+
+      applyTileMetrics(tile);
+
       window.addEventListener('error', (event) => {
         emit('error', event.message || 'window error', {
           filename: event.filename,
@@ -163,6 +185,15 @@ export function buildPreviewSrcDoc({
         emit('error', reason instanceof Error ? reason.message : String(reason), {
           stack: reason instanceof Error ? reason.stack : undefined,
         });
+      });
+      window.addEventListener('message', (event) => {
+        if (
+          event.data &&
+          typeof event.data === 'object' &&
+          event.data.source === 'wpp-dev-studio-tile-size'
+        ) {
+          applyTileMetrics(event.data.tile || {});
+        }
       });
 
       try {
@@ -188,6 +219,8 @@ export function buildPreviewSrcDoc({
           root,
           manifest,
           sampleData,
+          data: sampleData,
+          tile,
           host,
         };
 

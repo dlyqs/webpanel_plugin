@@ -64,6 +64,39 @@ export const SAMPLE_CASES: SampleCase[] = [
       ],
     },
   },
+  {
+    id: 'weibo-hot-rank',
+    label: 'Weibo Hot Rank',
+    description: 'A ranked hot-search payload shaped like the Weibo plugin main output.',
+    data: {
+      url: 'https://s.weibo.com/top/summary?cate=realtimehot',
+      title: '微博热搜榜',
+      updatedAt: '2026-06-09T14:30:00+08:00',
+      items: [
+        {
+          rank: 1,
+          title: '高考志愿填报',
+          hot: 2489134,
+          label: '热',
+          url: 'https://s.weibo.com/weibo?q=%23%E9%AB%98%E8%80%83%E5%BF%97%E6%84%BF%E5%A1%AB%E6%8A%A5%23',
+        },
+        {
+          rank: 2,
+          title: '端午假期消费观察',
+          hot: 1862055,
+          label: '新',
+          url: 'https://s.weibo.com/weibo?q=%23%E7%AB%AF%E5%8D%88%E5%81%87%E6%9C%9F%E6%B6%88%E8%B4%B9%E8%A7%82%E5%AF%9F%23',
+        },
+        {
+          rank: 3,
+          title: '毕业季租房攻略',
+          hot: 1268098,
+          label: '沸',
+          url: 'https://s.weibo.com/weibo?q=%23%E6%AF%95%E4%B8%9A%E5%AD%A3%E7%A7%9F%E6%88%BF%E6%94%BB%E7%95%A5%23',
+        },
+      ],
+    },
+  },
 ];
 
 export function getDefaultSampleCase(): SampleCase {

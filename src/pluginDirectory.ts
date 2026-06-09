@@ -15,6 +15,7 @@ export interface LoadedPluginDirectory {
   files: PluginDirectoryFile[];
   manifest: SitePluginManifest;
   manifestSource: string;
+  mainSource: string;
   rendererSource: string;
   warnings: string[];
 }
@@ -134,7 +135,8 @@ export async function readPluginDirectory(fileList: FileList): Promise<LoadedPlu
   if (!rendererEntry) {
     throw new Error(`Missing renderer entry: ${manifest.entry.renderer}`);
   }
-  if (!packageFiles.some((entry) => entry.path === manifest.entry.main)) {
+  const mainEntry = packageFiles.find((entry) => entry.path === manifest.entry.main);
+  if (!mainEntry) {
     throw new Error(`Missing main entry: ${manifest.entry.main}`);
   }
 
@@ -149,6 +151,7 @@ export async function readPluginDirectory(fileList: FileList): Promise<LoadedPlu
     files: packageFiles.sort((left, right) => left.path.localeCompare(right.path)),
     manifest,
     manifestSource,
+    mainSource: await readText(mainEntry.file),
     rendererSource: await readText(rendererEntry.file),
     warnings: packageWarnings,
   };

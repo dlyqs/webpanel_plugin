@@ -5,12 +5,24 @@ import {
   ExternalLink,
   FileJson,
   FolderOpen,
+  Globe2,
+  Maximize2,
   Package,
   Play,
   RefreshCw,
+  SlidersHorizontal,
   TerminalSquare,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ChangeEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import {
   downloadPackagedPlugin,
   packagePluginDirectory,
@@ -23,9 +35,31 @@ import {
   isPreviewLogMessage,
   type PreviewLogMessage,
 } from './pluginPreview';
+import { executePluginMain, type PluginMainRuntimeResult } from './pluginMainRuntime';
 import { getDefaultSampleCase, SAMPLE_CASES } from './sampleCases';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+type DataMode = 'main' | 'manual';
+
+interface TileSize {
+  width: number;
+  height: number;
+}
+
+const DEFAULT_TILE_SIZE: TileSize = {
+  width: 560,
+  height: 390,
+};
+
+const TILE_MIN_SIZE: TileSize = {
+  width: 280,
+  height: 220,
+};
+
+const TILE_MAX_SIZE: TileSize = {
+  width: 820,
+  height: 560,
+};
 
 function formatBytes(value: number): string {
   if (value < 1024) {
@@ -63,12 +97,51 @@ function parseSampleData(value: string): { data: unknown; error: string | null }
   }
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function inferSourceUrlFromHostPatterns(hostPatterns: string[]): string {
+  const preferredPattern =
+    hostPatterns.find((pattern) => pattern.includes('/') && !pattern.trim().startsWith('*.')) ??
+    hostPatterns.find((pattern) => !pattern.trim().startsWith('*.')) ??
+    hostPatterns[0] ??
+    '';
+  const stripped = preferredPattern
+    .trim()
+    .replace(/^\*\./, '')
+    .replace(/\*+$/, '')
+    .replace(/\/+$/, '');
+
+  if (!stripped) {
+    return '';
+  }
+
+  const withProtocol = /^https?:\/\//i.test(stripped) ? stripped : `https://${stripped}`;
+  try {
+    return new URL(withProtocol).toString();
+  } catch {
+    return '';
+  }
+}
+
+function formatDuration(value: number): string {
+  if (value < 1000) {
+    return `${value} ms`;
+  }
+  return `${(value / 1000).toFixed(1)} s`;
+}
+
 function createBlankPreviewSrcDoc(message: string): string {
   return `<!doctype html><html><body style="margin:0;height:100vh;display:grid;place-items:center;font-family:system-ui;color:#64748b;background:#f8fafc">${message}</body></html>`;
 }
 
 function App() {
   const directoryInputRef = useRef<HTMLInputElement | null>(null);
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const boardStageRef = useRef<HTMLDivElement | null>(null);
+  const resizeStartRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const autoRunKeyRef = useRef<string | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [directory, setDirectory] = useState<LoadedPluginDirectory | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -76,11 +149,21 @@ function App() {
   const [previewVersion, setPreviewVersion] = useState(0);
   const [previewTitle, setPreviewTitle] = useState('');
   const [logs, setLogs] = useState<PreviewLogMessage[]>([]);
+  const [dataMode, setDataMode] = useState<DataMode>('main');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [mainBusy, setMainBusy] = useState(false);
+  const [mainResult, setMainResult] = useState<PluginMainRuntimeResult | null>(null);
+  const [mainError, setMainError] = useState<string | null>(null);
   const [sampleCaseId, setSampleCaseId] = useState(getDefaultSampleCase().id);
   const [sampleJson, setSampleJson] = useState(() => JSON.stringify(getDefaultSampleCase().data, null, 2));
+  const [tileSize, setTileSize] = useState<TileSize>(DEFAULT_TILE_SIZE);
   const [packageBusy, setPackageBusy] = useState(false);
   const [packageResult, setPackageResult] = useState<PackagedPluginDirectory | null>(null);
   const [packageError, setPackageError] = useState<string | null>(null);
+
+  const appendLog = useCallback((log: PreviewLogMessage) => {
+    setLogs((current) => [log, ...current].slice(0, 80));
+  }, []);
 
   useEffect(() => {
     directoryInputRef.current?.setAttribute('webkitdirectory', '');
@@ -108,15 +191,12 @@ function App() {
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (isPreviewLogMessage(event.data)) {
-        setLogs((current) => [
-          {
-            level: event.data.level,
-            message: event.data.message,
-            details: event.data.details,
-            at: event.data.at,
-          },
-          ...current,
-        ].slice(0, 80));
+        appendLog({
+          level: event.data.level,
+          message: event.data.message,
+          details: event.data.details,
+          at: event.data.at,
+        });
         return;
       }
 
@@ -131,7 +211,7 @@ function App() {
 
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, []);
+  }, [appendLog]);
 
   const selectedSampleCase = SAMPLE_CASES.find((item) => item.id === sampleCaseId) ?? getDefaultSampleCase();
   const parsedSample = useMemo(() => parseSampleData(sampleJson), [sampleJson]);
@@ -141,20 +221,107 @@ function App() {
   );
   const runtimeLabel = directory?.manifest.runtime?.type ?? 'external-module';
   const tileTitle = previewTitle || directory?.manifest.name || 'Plugin preview';
+  const effectiveSampleData = dataMode === 'main' && mainResult ? mainResult.data : parsedSample.data;
+  const tileStyle = useMemo<CSSProperties>(
+    () => ({
+      width: `${tileSize.width}px`,
+      height: `${tileSize.height}px`,
+    }),
+    [tileSize.height, tileSize.width],
+  );
 
   const previewSrcDoc = useMemo(() => {
     if (!directory || !rendererUrl) {
       return createBlankPreviewSrcDoc('Choose a plugin directory');
     }
-    if (parsedSample.error) {
+    if (dataMode === 'manual' && parsedSample.error) {
       return createBlankPreviewSrcDoc('Sample data JSON is invalid');
+    }
+    if (dataMode === 'main' && mainError) {
+      return createBlankPreviewSrcDoc('Main entry failed');
+    }
+    if (dataMode === 'main' && !mainResult) {
+      return createBlankPreviewSrcDoc('Run main to generate tile data');
     }
     return buildPreviewSrcDoc({
       manifest: directory.manifest,
       rendererUrl,
-      sampleData: parsedSample.data,
+      sampleData: effectiveSampleData,
+      tile: tileSize,
     });
-  }, [directory, parsedSample.data, parsedSample.error, rendererUrl, previewVersion]);
+  }, [
+    dataMode,
+    directory,
+    effectiveSampleData,
+    mainError,
+    mainResult,
+    parsedSample.error,
+    rendererUrl,
+    previewVersion,
+    tileSize,
+  ]);
+
+  const runMain = useCallback(async () => {
+    if (!directory) {
+      return;
+    }
+    if (parsedSample.error) {
+      setMainError(parsedSample.error);
+      return;
+    }
+
+    setDataMode('main');
+    setMainBusy(true);
+    setMainError(null);
+    setMainResult(null);
+    setLogs([]);
+    try {
+      const result = await executePluginMain({
+        manifest: directory.manifest,
+        mainSource: directory.mainSource,
+        sourceUrl,
+        sampleData: parsedSample.data,
+        onLog: appendLog,
+      });
+      setMainResult(result);
+      if (result.sourceUrl && result.sourceUrl !== sourceUrl) {
+        setSourceUrl(result.sourceUrl);
+      }
+      setPreviewVersion((current) => current + 1);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Main entry failed';
+      setMainError(message);
+      appendLog({
+        level: 'error',
+        message,
+        at: new Date().toISOString(),
+      });
+    } finally {
+      setMainBusy(false);
+    }
+  }, [appendLog, directory, parsedSample.data, parsedSample.error, sourceUrl]);
+
+  useEffect(() => {
+    if (!directory || dataMode !== 'main' || mainBusy || mainError) {
+      return;
+    }
+    const autoRunKey = `${directory.rootName}:${directory.manifest.id}:${directory.manifest.version}`;
+    if (autoRunKeyRef.current === autoRunKey) {
+      return;
+    }
+    autoRunKeyRef.current = autoRunKey;
+    void runMain();
+  }, [dataMode, directory, mainBusy, mainError, runMain]);
+
+  useEffect(() => {
+    previewFrameRef.current?.contentWindow?.postMessage(
+      {
+        source: 'wpp-dev-studio-tile-size',
+        tile: tileSize,
+      },
+      '*',
+    );
+  }, [tileSize]);
 
   const chooseDirectory = () => {
     directoryInputRef.current?.click();
@@ -166,6 +333,7 @@ function App() {
     setPackageError(null);
     setLogs([]);
     setPreviewVersion((current) => current + 1);
+    autoRunKeyRef.current = null;
     if (!files || files.length === 0) {
       return;
     }
@@ -174,10 +342,17 @@ function App() {
     setLoadError(null);
     try {
       const loaded = await readPluginDirectory(files);
+      setDataMode('main');
+      setSourceUrl(inferSourceUrlFromHostPatterns(loaded.manifest.hostPatterns));
+      setMainResult(null);
+      setMainError(null);
       setDirectory(loaded);
       setLoadState('ready');
     } catch (error) {
       setDirectory(null);
+      setSourceUrl('');
+      setMainResult(null);
+      setMainError(null);
       setLoadState('error');
       setLoadError(error instanceof Error ? error.message : 'Failed to load plugin directory');
     } finally {
@@ -189,11 +364,17 @@ function App() {
     const nextCase = SAMPLE_CASES.find((item) => item.id === nextId) ?? getDefaultSampleCase();
     setSampleCaseId(nextCase.id);
     setSampleJson(JSON.stringify(nextCase.data, null, 2));
+    setMainResult(null);
+    setMainError(null);
     setPreviewVersion((current) => current + 1);
     setLogs([]);
   };
 
   const reloadPreview = () => {
+    if (dataMode === 'main' && directory) {
+      void runMain();
+      return;
+    }
     setPreviewVersion((current) => current + 1);
     setLogs([]);
   };
@@ -223,6 +404,46 @@ function App() {
     } finally {
       setPackageBusy(false);
     }
+  };
+
+  const setPresetTileSize = (nextSize: TileSize) => {
+    setTileSize({
+      width: clamp(nextSize.width, TILE_MIN_SIZE.width, TILE_MAX_SIZE.width),
+      height: clamp(nextSize.height, TILE_MIN_SIZE.height, TILE_MAX_SIZE.height),
+    });
+  };
+
+  const beginTileResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    resizeStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      width: tileSize.width,
+      height: tileSize.height,
+    };
+
+    const onPointerMove = (pointerEvent: PointerEvent) => {
+      const start = resizeStartRef.current;
+      if (!start) {
+        return;
+      }
+      const stageRect = boardStageRef.current?.getBoundingClientRect();
+      const maxWidth = Math.min(TILE_MAX_SIZE.width, Math.max(TILE_MIN_SIZE.width, (stageRect?.width ?? 900) - 52));
+      const maxHeight = Math.min(TILE_MAX_SIZE.height, Math.max(TILE_MIN_SIZE.height, (stageRect?.height ?? 600) - 52));
+      setTileSize({
+        width: Math.round(clamp(start.width + pointerEvent.clientX - start.x, TILE_MIN_SIZE.width, maxWidth)),
+        height: Math.round(clamp(start.height + pointerEvent.clientY - start.y, TILE_MIN_SIZE.height, maxHeight)),
+      });
+    };
+
+    const onPointerUp = () => {
+      resizeStartRef.current = null;
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp, { once: true });
   };
 
   return (
@@ -306,6 +527,63 @@ function App() {
 
           <section className="panel-section">
             <div className="section-heading">
+              <Globe2 size={18} />
+              <h2>Runtime</h2>
+            </div>
+            <div className="mode-switch" role="group" aria-label="Preview data source">
+              <button
+                type="button"
+                className={dataMode === 'main' ? 'is-active' : ''}
+                onClick={() => setDataMode('main')}
+              >
+                Main Output
+              </button>
+              <button
+                type="button"
+                className={dataMode === 'manual' ? 'is-active' : ''}
+                onClick={() => setDataMode('manual')}
+              >
+                Manual JSON
+              </button>
+            </div>
+            <label className="field-label" htmlFor="source-url">
+              Source URL
+            </label>
+            <input
+              id="source-url"
+              className="text-input"
+              type="url"
+              value={sourceUrl}
+              onChange={(event) => {
+                setSourceUrl(event.currentTarget.value);
+                setMainResult(null);
+                setMainError(null);
+              }}
+              placeholder="https://example.com/page"
+            />
+            <button type="button" className="wide-button" onClick={runMain} disabled={!directory || mainBusy}>
+              <Play size={16} />
+              {mainBusy ? 'Running Main' : 'Run Main'}
+            </button>
+            {dataMode === 'main' && mainResult && (
+              <p className="state-line">
+                <CheckCircle2 size={14} />
+                Main output ready in {formatDuration(mainResult.durationMs)}
+              </p>
+            )}
+            {dataMode === 'main' && mainError && (
+              <p className="state-line is-error">
+                <AlertTriangle size={14} />
+                {mainError}
+              </p>
+            )}
+            {dataMode === 'main' && !mainResult && !mainError && !mainBusy && (
+              <p className="state-line">Renderer receives main output as sampleData.</p>
+            )}
+          </section>
+
+          <section className="panel-section">
+            <div className="section-heading">
               <Play size={18} />
               <h2>Test Case</h2>
             </div>
@@ -333,7 +611,11 @@ function App() {
               className={`json-editor ${parsedSample.error ? 'is-invalid' : ''}`}
               spellCheck={false}
               value={sampleJson}
-              onChange={(event) => setSampleJson(event.currentTarget.value)}
+              onChange={(event) => {
+                setSampleJson(event.currentTarget.value);
+                setMainResult(null);
+                setMainError(null);
+              }}
             />
             {parsedSample.error && (
               <p className="state-line is-error">
@@ -371,9 +653,9 @@ function App() {
         </aside>
 
         <section className="board-zone" aria-label="Plugin preview board">
-          <div className="board-stage">
+          <div className="board-stage" ref={boardStageRef}>
             <div className="grid-lines" />
-            <article className="sim-tile">
+            <article className="sim-tile" style={tileStyle}>
               <header className="sim-tile-header">
                 <div>
                   <strong>{tileTitle}</strong>
@@ -383,6 +665,7 @@ function App() {
               </header>
               <div className="sim-tile-body">
                 <iframe
+                  ref={previewFrameRef}
                   key={`${directory?.manifest.id ?? 'empty'}:${previewVersion}:${rendererUrl ?? 'none'}`}
                   title="WPP plugin preview"
                   className="preview-frame"
@@ -390,6 +673,14 @@ function App() {
                   sandbox="allow-scripts allow-same-origin allow-popups"
                 />
               </div>
+              <button
+                type="button"
+                className="tile-resize-handle"
+                onPointerDown={beginTileResize}
+                aria-label="Resize tile"
+              >
+                <Maximize2 size={13} />
+              </button>
             </article>
           </div>
         </section>
@@ -449,6 +740,63 @@ function App() {
                 </div>
               )}
               {!directory && <p className="state-line">No files selected.</p>}
+            </div>
+          </section>
+
+          <section className="panel-section">
+            <div className="section-heading">
+              <SlidersHorizontal size={18} />
+              <h2>Tile Size</h2>
+            </div>
+            <div className="size-readout">
+              <strong>{tileSize.width}px</strong>
+              <span>x</span>
+              <strong>{tileSize.height}px</strong>
+            </div>
+            <label className="field-label" htmlFor="tile-width">
+              Width
+            </label>
+            <input
+              id="tile-width"
+              className="range-input"
+              type="range"
+              min={TILE_MIN_SIZE.width}
+              max={TILE_MAX_SIZE.width}
+              value={tileSize.width}
+              onChange={(event) =>
+                setTileSize((current) => ({
+                  ...current,
+                  width: Number(event.currentTarget.value),
+                }))
+              }
+            />
+            <label className="field-label" htmlFor="tile-height">
+              Height
+            </label>
+            <input
+              id="tile-height"
+              className="range-input"
+              type="range"
+              min={TILE_MIN_SIZE.height}
+              max={TILE_MAX_SIZE.height}
+              value={tileSize.height}
+              onChange={(event) =>
+                setTileSize((current) => ({
+                  ...current,
+                  height: Number(event.currentTarget.value),
+                }))
+              }
+            />
+            <div className="size-presets">
+              <button type="button" onClick={() => setPresetTileSize({ width: 360, height: 260 })}>
+                Small
+              </button>
+              <button type="button" onClick={() => setPresetTileSize(DEFAULT_TILE_SIZE)}>
+                Medium
+              </button>
+              <button type="button" onClick={() => setPresetTileSize({ width: 720, height: 500 })}>
+                Large
+              </button>
             </div>
           </section>
 

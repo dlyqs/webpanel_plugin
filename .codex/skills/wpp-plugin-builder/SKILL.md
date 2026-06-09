@@ -84,7 +84,7 @@ Important current boundary: WPP Dev Studio can preview and package `external-mod
 
 ## Renderer Contract
 
-`renderer/index.js` is loaded as an ES module inside the preview iframe. Export either a function or an object with `render(context)`:
+`renderer/index.js` is loaded as an ES module inside the preview iframe after `main/index.js` has produced preview data. Export either a function or an object with `render(context)`:
 
 ```js
 export default {
@@ -100,16 +100,18 @@ The context includes:
 
 - `root`: the tile root element.
 - `manifest`: normalized manifest metadata.
-- `sampleData`: the JSON scenario selected or edited in Dev Studio.
+- `sampleData`: the main output in Main Output mode, or the JSON scenario selected or edited in Manual JSON mode.
+- `data`: alias for `sampleData`.
+- `tile`: current simulated tile width and height in pixels.
 - `host.log(...)` and `host.warn(...)`: console messages forwarded to the studio.
 - `host.setTitle(title)`: updates the simulated tile title.
 - `host.setStatus(status)`: emits a status message.
 
-Do not import private WebPanel modules, use Node.js APIs, or assume `window.electronAPI` exists. Keep renderer code deterministic from `sampleData`.
+Do not import private WebPanel modules, use Node.js APIs, or assume `window.electronAPI` exists. Keep renderer code deterministic from `sampleData` and `tile`.
 
 ## Main Entry
 
-`main/index.js` is currently a package completeness and future-runtime placeholder for third-party plugins. Keep it small and side-effect-free. A minimal file is acceptable:
+`main/index.js` runs in the studio runtime before renderer preview. Use CommonJS exports. It may export a function, an object with `resolve(context)`, or an object with `activate(context)` plus `resolve(context)`.
 
 ```js
 module.exports = {
@@ -117,10 +119,24 @@ module.exports = {
     return {
       pluginId: context?.manifest?.id,
       status: 'ready',
+      sourceUrl: 'https://example.com/feed',
+    };
+  },
+
+  async resolve({ sourceUrl, host }) {
+    const data = await host.fetchJson(sourceUrl);
+    return {
+      url: sourceUrl,
+      updatedAt: new Date().toISOString(),
+      data,
     };
   },
 };
 ```
+
+The main context includes `manifest`, `sourceUrl`, `sampleData`, `request.operation = "preview"`, and `host`.
+The host includes `log`, `warn`, `setStatus`, `fetch`, `fetchText`, and `fetchJson`.
+The Vite dev/preview server proxies `host.fetch*` requests from Node so local previews are not blocked by browser CORS. Do not call `require()` from main; bundle dependencies into `main/index.js`.
 
 ## Validation
 
