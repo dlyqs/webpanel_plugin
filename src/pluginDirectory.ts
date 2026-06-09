@@ -98,12 +98,18 @@ async function readBytes(file: File): Promise<Uint8Array> {
   return new Uint8Array(await file.arrayBuffer());
 }
 
-export async function readPluginDirectory(fileList: FileList): Promise<LoadedPluginDirectory> {
-  const rawFiles = Array.from(fileList).map((file) => ({
-    path: getBrowserRelativePath(file),
-    file,
-    size: file.size,
-  }));
+function getRootNameFromPrefix(prefix: string, fallback: string): string {
+  const normalized = normalizePath(prefix);
+  if (!normalized) {
+    return fallback;
+  }
+  return normalized.split('/').filter(Boolean).pop() || fallback;
+}
+
+async function loadPluginFiles(
+  rawFiles: PluginDirectoryFile[],
+  rootNameFallback: string,
+): Promise<LoadedPluginDirectory> {
   const packageFiles = normalizePackageRoot(rawFiles.filter((entry) => !shouldIgnorePath(entry.path)));
   if (packageFiles.length === 0) {
     throw new Error('The directory is empty or has no packageable files');
@@ -147,7 +153,7 @@ export async function readPluginDirectory(fileList: FileList): Promise<LoadedPlu
   }
 
   return {
-    rootName: getBrowserRelativePath(Array.from(fileList)[0] ?? manifestEntry.file).split('/')[0] || manifest.id,
+    rootName: rootNameFallback || manifest.id,
     files: packageFiles.sort((left, right) => left.path.localeCompare(right.path)),
     manifest,
     manifestSource,
@@ -155,6 +161,56 @@ export async function readPluginDirectory(fileList: FileList): Promise<LoadedPlu
     rendererSource: await readText(rendererEntry.file),
     warnings: packageWarnings,
   };
+}
+
+function createRawFiles(fileList: FileList): PluginDirectoryFile[] {
+  return Array.from(fileList).map((file) => ({
+    path: getBrowserRelativePath(file),
+    file,
+    size: file.size,
+  }));
+}
+
+export async function readPluginDirectories(fileList: FileList): Promise<LoadedPluginDirectory[]> {
+  const rawFiles = createRawFiles(fileList);
+  const filteredFiles = rawFiles.filter((entry) => !shouldIgnorePath(entry.path));
+  const manifestEntries = filteredFiles.filter(
+    (entry) => entry.path === 'manifest.json' || entry.path.endsWith('/manifest.json'),
+  );
+
+  if (manifestEntries.length === 0) {
+    return [await loadPluginFiles(filteredFiles, getBrowserRelativePath(Array.from(fileList)[0] ?? new File([], 'plugin')).split('/')[0])];
+  }
+
+  const loaded: LoadedPluginDirectory[] = [];
+  const errors: string[] = [];
+  for (const manifestEntry of manifestEntries) {
+    const prefix = manifestEntry.path.slice(0, -'manifest.json'.length);
+    const rootName = getRootNameFromPrefix(prefix, 'plugin');
+    const pluginFiles = filteredFiles
+      .filter((entry) => entry.path.startsWith(prefix))
+      .map((entry) => ({
+        ...entry,
+        path: stripPrefix(entry.path, prefix),
+      }));
+
+    try {
+      loaded.push(await loadPluginFiles(pluginFiles, rootName));
+    } catch (error) {
+      errors.push(`${rootName}: ${error instanceof Error ? error.message : 'Failed to load plugin directory'}`);
+    }
+  }
+
+  if (loaded.length === 0) {
+    throw new Error(errors[0] || 'No valid plugin directories found');
+  }
+
+  return loaded.sort((left, right) => left.rootName.localeCompare(right.rootName));
+}
+
+export async function readPluginDirectory(fileList: FileList): Promise<LoadedPluginDirectory> {
+  const directories = await readPluginDirectories(fileList);
+  return directories[0];
 }
 
 export async function packagePluginDirectory(directory: LoadedPluginDirectory): Promise<PackagedPluginDirectory> {

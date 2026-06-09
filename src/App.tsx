@@ -26,7 +26,7 @@ import {
 import {
   downloadPackagedPlugin,
   packagePluginDirectory,
-  readPluginDirectory,
+  readPluginDirectories,
   type LoadedPluginDirectory,
   type PackagedPluginDirectory,
 } from './pluginDirectory';
@@ -142,8 +142,11 @@ function App() {
   const boardStageRef = useRef<HTMLDivElement | null>(null);
   const resizeStartRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const autoRunKeyRef = useRef<string | null>(null);
+  const autoPromptedRef = useRef(false);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [directory, setDirectory] = useState<LoadedPluginDirectory | null>(null);
+  const [directoryOptions, setDirectoryOptions] = useState<LoadedPluginDirectory[]>([]);
+  const [selectedDirectoryRoot, setSelectedDirectoryRoot] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rendererUrl, setRendererUrl] = useState<string | null>(null);
   const [previewVersion, setPreviewVersion] = useState(0);
@@ -167,6 +170,16 @@ function App() {
 
   useEffect(() => {
     directoryInputRef.current?.setAttribute('webkitdirectory', '');
+    if (!autoPromptedRef.current) {
+      autoPromptedRef.current = true;
+      window.setTimeout(() => {
+        try {
+          directoryInputRef.current?.click();
+        } catch {
+          // Browsers may block file pickers that are not triggered by direct user input.
+        }
+      }, 250);
+    }
   }, []);
 
   useEffect(() => {
@@ -327,6 +340,17 @@ function App() {
     directoryInputRef.current?.click();
   };
 
+  const applyLoadedDirectory = (loaded: LoadedPluginDirectory) => {
+    setDataMode('main');
+    setSourceUrl(inferSourceUrlFromHostPatterns(loaded.manifest.hostPatterns));
+    setMainResult(null);
+    setMainError(null);
+    setDirectory(loaded);
+    setSelectedDirectoryRoot(loaded.rootName);
+    setLoadState('ready');
+    autoRunKeyRef.current = null;
+  };
+
   const handleDirectoryChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.currentTarget.files;
     setPackageResult(null);
@@ -341,15 +365,13 @@ function App() {
     setLoadState('loading');
     setLoadError(null);
     try {
-      const loaded = await readPluginDirectory(files);
-      setDataMode('main');
-      setSourceUrl(inferSourceUrlFromHostPatterns(loaded.manifest.hostPatterns));
-      setMainResult(null);
-      setMainError(null);
-      setDirectory(loaded);
-      setLoadState('ready');
+      const loadedDirectories = await readPluginDirectories(files);
+      setDirectoryOptions(loadedDirectories);
+      applyLoadedDirectory(loadedDirectories[0]);
     } catch (error) {
       setDirectory(null);
+      setDirectoryOptions([]);
+      setSelectedDirectoryRoot('');
       setSourceUrl('');
       setMainResult(null);
       setMainError(null);
@@ -358,6 +380,18 @@ function App() {
     } finally {
       event.currentTarget.value = '';
     }
+  };
+
+  const handleWorkspaceDirectoryChange = (nextRootName: string) => {
+    const loaded = directoryOptions.find((item) => item.rootName === nextRootName);
+    if (!loaded) {
+      return;
+    }
+    setPackageResult(null);
+    setPackageError(null);
+    setLogs([]);
+    setPreviewVersion((current) => current + 1);
+    applyLoadedDirectory(loaded);
   };
 
   const handleSampleCaseChange = (nextId: string) => {
@@ -486,8 +520,30 @@ function App() {
             </div>
             <button type="button" className="wide-button" onClick={chooseDirectory}>
               <FolderOpen size={16} />
-              Choose Directory
+              Choose Workspace or Directory
             </button>
+            {directoryOptions.length > 1 && (
+              <>
+                <label className="field-label" htmlFor="workspace-plugin">
+                  Workspace Plugin
+                </label>
+                <select
+                  id="workspace-plugin"
+                  className="select-input"
+                  value={selectedDirectoryRoot}
+                  onChange={(event) => handleWorkspaceDirectoryChange(event.currentTarget.value)}
+                >
+                  {directoryOptions.map((item) => (
+                    <option key={`${item.rootName}:${item.manifest.id}`} value={item.rootName}>
+                      {item.manifest.name} ({item.rootName})
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {directoryOptions.length === 1 && (
+              <p className="state-line">Loaded {directoryOptions[0].rootName}</p>
+            )}
             {loadState === 'loading' && <p className="state-line">Reading directory...</p>}
             {loadState === 'error' && loadError && (
               <p className="state-line is-error">

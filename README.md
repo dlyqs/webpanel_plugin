@@ -32,14 +32,15 @@ Put plugins you are actively developing under `workspace/<plugin-id>/`. The dire
 
 ## Local Workflow
 
-1. Create or copy a plugin into `workspace/<plugin-id>/`.
-2. Validate it with `pnpm run wpp:validate -- workspace/<plugin-id>`.
-3. Choose the plugin directory in the studio.
-4. Enter a source URL and run `main/index.js`, or switch to Manual JSON and edit a `sampleData` test case.
-5. Preview the plugin renderer in the simulated WebPanel tile.
-6. Use browser DevTools or the studio console to debug renderer output.
-7. Resize the simulated tile with the size controls or the tile resize handle.
-8. Package the directory as `<plugin-id>.wpp`.
+1. Create or copy plugins into `workspace/<plugin-id>/`.
+2. Validate a plugin with `pnpm run wpp:validate -- workspace/<plugin-id>`.
+3. Open the studio. It will ask for a directory; choose `workspace/` to let the studio detect local plugins, or choose a single plugin directory.
+4. If the selected directory contains multiple plugins, pick one from the Workspace Plugin dropdown.
+5. Enter a source URL and run `main/index.js`, or switch to Manual JSON and edit a `sampleData` test case.
+6. Preview the plugin renderer in the simulated WebPanel tile.
+7. Use browser DevTools or the studio console to debug renderer output.
+8. Resize the simulated tile with the size controls or the tile resize handle.
+9. Package the directory as `<plugin-id>.wpp`.
 
 Upload is intentionally not included here. Users upload the generated `.wpp` from the main WebPanel app, where account login and marketplace permissions already exist.
 
