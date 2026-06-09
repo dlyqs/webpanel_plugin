@@ -13,6 +13,7 @@ export interface BuildPreviewSrcDocOptions {
   manifest: SitePluginManifest;
   rendererUrl: string;
   sampleData: unknown;
+  sourceUrl: string;
   tile: {
     width: number;
     height: number;
@@ -27,10 +28,12 @@ export function buildPreviewSrcDoc({
   manifest,
   rendererUrl,
   sampleData,
+  sourceUrl,
   tile,
 }: BuildPreviewSrcDocOptions): string {
   const manifestJson = htmlJson(manifest);
   const sampleJson = htmlJson(sampleData);
+  const sourceUrlJson = htmlJson(sourceUrl);
   const tileJson = htmlJson(tile);
   const rendererUrlLiteral = JSON.stringify(rendererUrl);
 
@@ -112,14 +115,17 @@ export function buildPreviewSrcDoc({
   <body>
     <script id="manifest-json" type="application/json">${manifestJson}</script>
     <script id="sample-json" type="application/json">${sampleJson}</script>
+    <script id="source-url-json" type="application/json">${sourceUrlJson}</script>
     <script id="tile-json" type="application/json">${tileJson}</script>
     <div id="plugin-root"></div>
     <script type="module">
       const root = document.getElementById('plugin-root');
       const manifest = JSON.parse(document.getElementById('manifest-json').textContent || '{}');
       const sampleData = JSON.parse(document.getElementById('sample-json').textContent || 'null');
+      const sourceUrl = JSON.parse(document.getElementById('source-url-json').textContent || '""');
       const tile = JSON.parse(document.getElementById('tile-json').textContent || '{}');
       const rendererUrl = ${rendererUrlLiteral};
+      const nativeWindowOpen = window.open.bind(window);
 
       function emit(level, message, details) {
         window.parent.postMessage({
@@ -173,6 +179,67 @@ export function buildPreviewSrcDoc({
 
       applyTileMetrics(tile);
 
+      function hasPermission(permission) {
+        return Array.isArray(manifest.permissions) && manifest.permissions.includes(permission);
+      }
+
+      function readOpenWindowUrl(input) {
+        if (input && typeof input === 'object') {
+          return String(input.url || input.href || '');
+        }
+        return String(input || '');
+      }
+
+      function normalizeOpenWindowUrl(input) {
+        const rawUrl = readOpenWindowUrl(input).trim();
+        if (!rawUrl) return '';
+        try {
+          const parsed = new URL(rawUrl, sourceUrl || undefined);
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return '';
+          }
+          return parsed.toString();
+        } catch {
+          return '';
+        }
+      }
+
+      function requestOpenWindow(input, options) {
+        const targetUrl = normalizeOpenWindowUrl(input);
+        if (!targetUrl) {
+          emit('warn', 'host.openWindow ignored invalid URL', { url: readOpenWindowUrl(input) });
+          return false;
+        }
+        if (!hasPermission('openWindow')) {
+          emit('warn', 'host.openWindow requires manifest.permissions openWindow', { url: targetUrl });
+          return false;
+        }
+        emit('info', 'host.openWindow', { url: targetUrl });
+        nativeWindowOpen(targetUrl, '_blank', 'noopener');
+        return true;
+      }
+
+      window.open = (url, target, features) => {
+        requestOpenWindow(url, { target, features });
+        return null;
+      };
+
+      document.addEventListener('click', (event) => {
+        const target = event.target;
+        const anchor = target && typeof target.closest === 'function' ? target.closest('a[href]') : null;
+        if (!anchor) return;
+        const targetName = String(anchor.getAttribute('target') || '').toLowerCase();
+        const shouldOpenInHost =
+          targetName === '_blank' ||
+          anchor.hasAttribute('data-wpp-open-window') ||
+          event.metaKey ||
+          event.ctrlKey;
+        if (!shouldOpenInHost) return;
+        event.preventDefault();
+        event.stopPropagation();
+        requestOpenWindow(anchor.getAttribute('href') || '', { target: targetName });
+      }, true);
+
       window.addEventListener('error', (event) => {
         emit('error', event.message || 'window error', {
           filename: event.filename,
@@ -214,12 +281,15 @@ export function buildPreviewSrcDoc({
             }, '*');
           },
           setStatus: (status) => emit('info', String(status || ''), { status }),
+          openWindow: (url, options) => requestOpenWindow(url, options),
+          openUrl: (url, options) => requestOpenWindow(url, options),
         };
         const context = {
           root,
           manifest,
           sampleData,
           data: sampleData,
+          sourceUrl,
           tile,
           host,
         };

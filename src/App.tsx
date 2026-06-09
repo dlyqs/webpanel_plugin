@@ -260,6 +260,7 @@ function App() {
       manifest: directory.manifest,
       rendererUrl,
       sampleData: effectiveSampleData,
+      sourceUrl,
       tile: tileSize,
     });
   }, [
@@ -270,6 +271,7 @@ function App() {
     mainResult,
     parsedSample.error,
     rendererUrl,
+    sourceUrl,
     previewVersion,
     tileSize,
   ]);

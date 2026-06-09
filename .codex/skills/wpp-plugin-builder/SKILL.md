@@ -5,7 +5,7 @@ description: Use when creating, updating, validating, packaging, or explaining t
 
 # WPP Plugin Builder
 
-Use this skill when the user wants to build a WebPanel `.wpp` plugin with the standalone `wpp-dev-studio` project.
+Use this skill when the user wants to build a WebPanel `.wpp` plugin with the standalone `webpanel_plugin` WPP Dev Studio project.
 
 ## Start Here
 
@@ -80,7 +80,7 @@ Rules:
 - Third-party plugins should use `runtime.type = "external-module"`.
 - Do not use `builtin-adapter` for third-party plugins. It is reserved for controlled host adapters.
 
-Important current boundary: WPP Dev Studio can preview and package `external-module` plugins, but the current WebPanel desktop local install path still executes only controlled `builtin-adapter` packages. Keep this explicit in user-facing answers.
+Important current boundary: WPP Dev Studio can preview and package `external-module` plugins, and the WebPanel desktop app can install and run them through the constrained main runtime plus renderer sandbox iframe. Keep sandbox limits explicit in user-facing answers: no main `require()`, no direct Electron API, and renderer code runs inside an iframe.
 
 ## Renderer Contract
 
@@ -103,11 +103,14 @@ The context includes:
 - `sampleData`: the main output in Main Output mode, or the JSON scenario selected or edited in Manual JSON mode.
 - `data`: alias for `sampleData`.
 - `tile`: current simulated tile width and height in pixels.
+- `sourceUrl`: the URL entered in the Runtime panel and the base URL for relative links.
 - `host.log(...)` and `host.warn(...)`: console messages forwarded to the studio.
 - `host.setTitle(title)`: updates the simulated tile title.
 - `host.setStatus(status)`: emits a status message.
+- `host.openWindow(url)`: official API for opening a detail page or external link in a host-managed new window. Require `"openWindow"` in `manifest.permissions` before using it.
+- `host.openUrl(url)`: compatibility alias for `host.openWindow(url)`.
 
-Do not import private WebPanel modules, use Node.js APIs, or assume `window.electronAPI` exists. Keep renderer code deterministic from `sampleData` and `tile`.
+Do not import private WebPanel modules, use Node.js APIs, or assume `window.electronAPI` exists. Keep renderer code deterministic from `sampleData`, `sourceUrl`, and `tile`. Do not rely on native popup behavior; the host intercepts `window.open(...)`, `target="_blank"` links, and `data-wpp-open-window` links and applies the same `openWindow` permission check.
 
 ## Main Entry
 

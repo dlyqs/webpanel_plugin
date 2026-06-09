@@ -14,13 +14,13 @@ pnpm dev
 Inside this repository you can also run it from the repo root:
 
 ```bash
-pnpm --dir tools/wpp-dev-studio dev
+pnpm --dir tools/webpanel_plugin dev
 ```
 
 ## Project Layout
 
 ```text
-wpp-dev-studio/
+webpanel_plugin/
   .codex/skills/wpp-plugin-builder/  Codex skill for creating local WPP plugins
   examples/simple-widget/            Reference plugin that should stay distributable
   scripts/wpp-plugin.mjs             CLI validator and packer
@@ -144,9 +144,14 @@ The preview context contains:
 - `sampleData`: the main output in Main Output mode, or the selected JSON test case in Manual JSON mode.
 - `data`: alias for `sampleData`.
 - `tile`: current simulated tile width and height in pixels.
+- `sourceUrl`: the URL entered in the Runtime panel, also used as the base for relative links.
 - `host.log(...)`, `host.warn(...)`: messages forwarded to the studio console.
 - `host.setTitle(title)`: updates the simulated tile title.
 - `host.setStatus(status)`: emits a status message to the studio console.
+- `host.openWindow(url)`: requests the host to open a new window. The manifest must include the `openWindow` permission.
+- `host.openUrl(url)`: compatibility alias for `host.openWindow(url)`.
+
+The desktop host also intercepts `window.open(...)`, `target="_blank"` links, and links marked with `data-wpp-open-window`; all of them require `openWindow` permission. Prefer `host.openWindow(url)` in plugin code so the behavior is explicit.
 
 ## Packaging
 
@@ -156,7 +161,7 @@ The browser packer creates a ZIP32 archive with `.wpp` extension. It excludes `.
 
 Third-party plugins should use `runtime.type = "external-module"` while developing in WPP Dev Studio. The studio can preview and package that renderer contract today.
 
-The current WebPanel desktop local install path still executes only controlled `builtin-adapter` packages shipped by the host app. A packaged `external-module` is therefore a public contract artifact for studio preview and future sandbox support, not proof that the current desktop app will execute arbitrary third-party JavaScript.
+The current WebPanel desktop local install path supports controlled `builtin-adapter` packages and third-party `external-module` packages. `external-module` main code runs in a constrained host runtime and renderer code runs in a tile sandbox iframe; do not depend on Node.js `require()` or direct Electron APIs.
 
 ## Codex Skill
 

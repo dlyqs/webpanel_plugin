@@ -164,7 +164,7 @@ function validateManifest(value) {
     }
   }
   if (runtime?.type === 'external-module') {
-    warnings.push('external-module can be previewed and packaged here; current WebPanel local install still executes only controlled builtin-adapter packages.');
+    warnings.push('external-module runs in the WebPanel sandbox runtime; do not use main require() or direct Electron APIs.');
   }
 
   return {
