@@ -1,0 +1,7 @@
+dist/
+dist-plugins/
+node_modules/
+tsconfig.tsbuildinfo
+.DS_Store
+workspace/*
+!workspace/.gitkeep

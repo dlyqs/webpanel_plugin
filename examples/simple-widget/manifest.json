@@ -1,0 +1,25 @@
+{
+  "id": "simple-widget",
+  "name": "Simple Widget",
+  "version": "1.0.0",
+  "plugin_api_version": "1.0.0",
+  "description": "A minimal external renderer module for WPP Dev Studio.",
+  "author": "WebPanel",
+  "host_patterns": ["*.example.com"],
+  "permissions": ["network"],
+  "entry": {
+    "renderer": "renderer/index.js",
+    "main": "main/index.js"
+  },
+  "runtime": {
+    "type": "external-module"
+  },
+  "marketplace": {
+    "tags": ["Example", "Widget"],
+    "highlights": [
+      "Exports a renderer render(context) function",
+      "Reads sampleData from the local studio",
+      "Can be packaged into a .wpp archive"
+    ]
+  }
+}
