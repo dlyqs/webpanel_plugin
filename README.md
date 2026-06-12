@@ -64,6 +64,7 @@ my-plugin/
   "description": "Short description.",
   "author": "Your Name",
   "host_patterns": ["*.example.com"],
+  "default_launch_url": "https://example.com/",
   "permissions": ["network"],
   "entry": {
     "renderer": "renderer/index.js",
@@ -74,6 +75,8 @@ my-plugin/
   }
 }
 ```
+
+URL-matched plugins must provide `default_launch_url`; it is the default URL used when a user clicks the installed plugin from WebPanel's new tile panel. Utility plugins that do not launch from a URL do not need this field.
 
 The studio strips the selected browser directory prefix so the package root contains `manifest.json`.
 

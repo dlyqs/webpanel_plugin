@@ -1,4 +1,5 @@
-export type SitePluginPermission = 'cookies' | 'executeScript' | 'network' | 'openWindow';
+export type SitePluginPermission = 'cookies' | 'executeScript' | 'network' | 'openWindow' | 'terminal';
+export type SitePluginSurface = 'site' | 'utility';
 
 export type SitePluginRuntimeType = 'builtin-adapter' | 'external-module';
 
@@ -18,8 +19,10 @@ export interface SitePluginManifest {
   version: string;
   pluginApiVersion: string;
   description: string;
+  surface?: SitePluginSurface;
   author?: string;
   hostPatterns: string[];
+  defaultLaunchUrl?: string;
   permissions: SitePluginPermission[];
   entry: {
     renderer: string;
@@ -41,8 +44,9 @@ const SUPPORTED_PERMISSIONS = new Set<SitePluginPermission>([
   'executeScript',
   'network',
   'openWindow',
+  'terminal',
 ]);
-const MAIN_APP_BUILTIN_ADAPTERS = new Set(['x-timeline', 'polymarket-event']);
+const MAIN_APP_BUILTIN_ADAPTERS = new Set(['x-timeline', 'polymarket-event', 'terminal', 'clock', 'calendar']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -66,9 +70,9 @@ function readRequiredStringFromKeys(record: Record<string, unknown>, keys: strin
   throw new Error(`manifest.json is missing ${keys[0]}`);
 }
 
-function readStringArray(record: Record<string, unknown>, key: string): string[] {
+function readStringArray(record: Record<string, unknown>, key: string, options: { allowEmpty?: boolean } = {}): string[] {
   const value = record[key];
-  if (!Array.isArray(value) || value.length === 0) {
+  if (!Array.isArray(value) || (!options.allowEmpty && value.length === 0)) {
     throw new Error(`manifest.json is missing ${key}`);
   }
   return value.map((item) => {
@@ -79,13 +83,47 @@ function readStringArray(record: Record<string, unknown>, key: string): string[]
   });
 }
 
-function readStringArrayFromKeys(record: Record<string, unknown>, keys: string[]): string[] {
+function readStringArrayFromKeys(
+  record: Record<string, unknown>,
+  keys: string[],
+  options: { allowEmpty?: boolean } = {},
+): string[] {
   for (const key of keys) {
-    if (Array.isArray(record[key]) && record[key].length > 0) {
-      return readStringArray(record, key);
+    if (Array.isArray(record[key]) && (options.allowEmpty || record[key].length > 0)) {
+      return readStringArray(record, key, options);
     }
   }
   throw new Error(`manifest.json is missing ${keys[0]}`);
+}
+
+function readSurface(record: Record<string, unknown>): SitePluginSurface | undefined {
+  if (typeof record.surface === 'undefined') {
+    return undefined;
+  }
+  if (record.surface !== 'site' && record.surface !== 'utility') {
+    throw new Error('manifest.json surface must be "site" or "utility"');
+  }
+  return record.surface;
+}
+
+function readDefaultLaunchUrl(record: Record<string, unknown>, surface: SitePluginSurface): string | undefined {
+  const rawValue = typeof record.defaultLaunchUrl === 'string' ? record.defaultLaunchUrl : record.default_launch_url;
+  if (typeof rawValue !== 'string' || rawValue.trim().length === 0) {
+    if (surface === 'utility') {
+      return undefined;
+    }
+    throw new Error('manifest.json is missing default_launch_url');
+  }
+  const value = rawValue.trim();
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('unsupported protocol');
+    }
+    return parsed.toString();
+  } catch {
+    throw new Error('manifest.json default_launch_url must be a valid http/https URL');
+  }
 }
 
 function normalizePackageRelativePath(value: string, key: string): string {
@@ -174,7 +212,7 @@ export function validateSitePluginManifest(value: unknown): ManifestValidationRe
     throw new Error(`Incompatible plugin API version: ${pluginApiVersion}`);
   }
 
-  const permissions = readStringArray(value, 'permissions').map((permission) => {
+  const permissions = readStringArray(value, 'permissions', { allowEmpty: true }).map((permission) => {
     if (!SUPPORTED_PERMISSIONS.has(permission as SitePluginPermission)) {
       throw new Error(`Unsupported plugin permission: ${permission}`);
     }
@@ -182,6 +220,11 @@ export function validateSitePluginManifest(value: unknown): ManifestValidationRe
   });
 
   const runtime = readRuntime(value);
+  const surface = readSurface(value) ?? 'site';
+  const hostPatterns = readStringArrayFromKeys(value, ['hostPatterns', 'host_patterns'], {
+    allowEmpty: surface === 'utility',
+  });
+  const defaultLaunchUrl = readDefaultLaunchUrl(value, surface);
   const warnings: string[] = [];
   if (!runtime) {
     warnings.push('manifest.runtime is missing; the studio previews it as external-module.');
@@ -202,8 +245,10 @@ export function validateSitePluginManifest(value: unknown): ManifestValidationRe
       version: readRequiredString(value, 'version'),
       pluginApiVersion,
       description: readRequiredString(value, 'description'),
+      surface,
       author: typeof value.author === 'string' && value.author.trim().length > 0 ? value.author.trim() : undefined,
-      hostPatterns: readStringArrayFromKeys(value, ['hostPatterns', 'host_patterns']),
+      hostPatterns,
+      defaultLaunchUrl,
       permissions,
       entry: readEntry(value),
       runtime,
@@ -220,8 +265,10 @@ export function manifestToPackageJson(manifest: SitePluginManifest): unknown {
     version: manifest.version,
     plugin_api_version: manifest.pluginApiVersion,
     description: manifest.description,
+    ...(manifest.surface && manifest.surface !== 'site' ? { surface: manifest.surface } : {}),
     ...(manifest.author ? { author: manifest.author } : {}),
     host_patterns: manifest.hostPatterns,
+    ...(manifest.defaultLaunchUrl ? { default_launch_url: manifest.defaultLaunchUrl } : {}),
     permissions: manifest.permissions,
     entry: manifest.entry,
     ...(manifest.runtime ? { runtime: manifest.runtime } : {}),

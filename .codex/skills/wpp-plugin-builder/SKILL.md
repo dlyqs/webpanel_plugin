@@ -60,6 +60,7 @@ Use snake_case public fields in `manifest.json`:
   "description": "Short description.",
   "author": "Your Name",
   "host_patterns": ["*.example.com"],
+  "default_launch_url": "https://example.com/",
   "permissions": ["network"],
   "entry": {
     "renderer": "renderer/index.js",
@@ -75,7 +76,8 @@ Rules:
 
 - `id` must match `/^[a-z0-9][a-z0-9._-]{1,63}$/`.
 - `plugin_api_version` must be `1.0.0`.
-- `permissions` can only include `cookies`, `executeScript`, `network`, and `openWindow`.
+- `default_launch_url` is required for URL-matched plugins. It must be a valid `http/https` URL that represents the plugin's default preview/open target.
+- `permissions` can only include `cookies`, `executeScript`, `network`, `openWindow`, and `terminal`; the field may be an empty array when no host capability is needed.
 - `entry.renderer` and `entry.main` must exist inside the package.
 - Third-party plugins should use `runtime.type = "external-module"`.
 - Do not use `builtin-adapter` for third-party plugins. It is reserved for controlled host adapters.
@@ -169,6 +171,7 @@ Do not open the browser preview, Browser plugin, or Playwright unless the user e
 
 - Plugin files live under `workspace/<plugin-id>/`.
 - `manifest.json` validates with `pnpm run wpp:validate`.
+- URL-matched plugins include `default_launch_url`; non-URL utility widgets do not need it.
 - Renderer exports a valid render function and handles missing sample fields.
 - Text and data are escaped before writing HTML strings.
 - Generated `.wpp` excludes `.git`, `node_modules`, `.DS_Store`, and existing `.wpp` files.

@@ -344,7 +344,7 @@ function App() {
 
   const applyLoadedDirectory = (loaded: LoadedPluginDirectory) => {
     setDataMode('main');
-    setSourceUrl(inferSourceUrlFromHostPatterns(loaded.manifest.hostPatterns));
+    setSourceUrl(loaded.manifest.defaultLaunchUrl || inferSourceUrlFromHostPatterns(loaded.manifest.hostPatterns));
     setMainResult(null);
     setMainError(null);
     setDirectory(loaded);

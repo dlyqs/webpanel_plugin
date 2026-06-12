@@ -6,6 +6,7 @@
   "description": "A minimal external renderer module for WPP Dev Studio.",
   "author": "WebPanel",
   "host_patterns": ["*.example.com"],
+  "default_launch_url": "https://example.com/",
   "permissions": ["network"],
   "entry": {
     "renderer": "renderer/index.js",

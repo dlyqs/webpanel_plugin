@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 const PLUGIN_API_VERSION = '1.0.0';
 const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,63}$/;
-const SUPPORTED_PERMISSIONS = new Set(['cookies', 'executeScript', 'network', 'openWindow']);
+const SUPPORTED_PERMISSIONS = new Set(['cookies', 'executeScript', 'network', 'openWindow', 'terminal']);
 const SUPPORTED_RUNTIME_TYPES = new Set(['builtin-adapter', 'external-module']);
-const MAIN_APP_BUILTIN_ADAPTERS = new Set(['x-timeline', 'polymarket-event']);
+const MAIN_APP_BUILTIN_ADAPTERS = new Set(['x-timeline', 'polymarket-event', 'terminal', 'clock', 'calendar']);
 const EXCLUDED_PATH_PARTS = new Set(['.git', 'node_modules']);
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -37,9 +37,9 @@ function readRequiredStringFromKeys(record, keys) {
   throw new Error(`manifest.json is missing ${keys[0]}`);
 }
 
-function readStringArray(record, key) {
+function readStringArray(record, key, options = {}) {
   const value = record[key];
-  if (!Array.isArray(value) || value.length === 0) {
+  if (!Array.isArray(value) || (!options.allowEmpty && value.length === 0)) {
     throw new Error(`manifest.json is missing ${key}`);
   }
   return value.map((item) => {
@@ -50,13 +50,43 @@ function readStringArray(record, key) {
   });
 }
 
-function readStringArrayFromKeys(record, keys) {
+function readStringArrayFromKeys(record, keys, options = {}) {
   for (const key of keys) {
-    if (Array.isArray(record[key]) && record[key].length > 0) {
-      return readStringArray(record, key);
+    if (Array.isArray(record[key]) && (options.allowEmpty || record[key].length > 0)) {
+      return readStringArray(record, key, options);
     }
   }
   throw new Error(`manifest.json is missing ${keys[0]}`);
+}
+
+function readSurface(record) {
+  if (typeof record.surface === 'undefined') {
+    return undefined;
+  }
+  if (record.surface !== 'site' && record.surface !== 'utility') {
+    throw new Error('manifest.json surface must be "site" or "utility"');
+  }
+  return record.surface;
+}
+
+function readDefaultLaunchUrl(record, surface) {
+  const rawValue = typeof record.defaultLaunchUrl === 'string' ? record.defaultLaunchUrl : record.default_launch_url;
+  if (typeof rawValue !== 'string' || rawValue.trim().length === 0) {
+    if (surface === 'utility') {
+      return undefined;
+    }
+    throw new Error('manifest.json is missing default_launch_url');
+  }
+  const value = rawValue.trim();
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('unsupported protocol');
+    }
+    return parsed.toString();
+  } catch {
+    throw new Error('manifest.json default_launch_url must be a valid http/https URL');
+  }
 }
 
 function normalizePackageRelativePath(value, key) {
@@ -143,7 +173,7 @@ function validateManifest(value) {
     throw new Error(`Incompatible plugin API version: ${pluginApiVersion}`);
   }
 
-  const permissions = readStringArray(value, 'permissions').map((permission) => {
+  const permissions = readStringArray(value, 'permissions', { allowEmpty: true }).map((permission) => {
     if (!SUPPORTED_PERMISSIONS.has(permission)) {
       throw new Error(`Unsupported plugin permission: ${permission}`);
     }
@@ -151,6 +181,11 @@ function validateManifest(value) {
   });
 
   const runtime = readRuntime(value);
+  const surface = readSurface(value) ?? 'site';
+  const hostPatterns = readStringArrayFromKeys(value, ['hostPatterns', 'host_patterns'], {
+    allowEmpty: surface === 'utility',
+  });
+  const defaultLaunchUrl = readDefaultLaunchUrl(value, surface);
   const warnings = [];
   if (!runtime) {
     warnings.push('manifest.runtime is missing; Dev Studio previews it as external-module.');
@@ -174,8 +209,10 @@ function validateManifest(value) {
       version: readRequiredString(value, 'version'),
       pluginApiVersion,
       description: readRequiredString(value, 'description'),
+      ...(surface !== 'site' ? { surface } : {}),
       ...(typeof value.author === 'string' && value.author.trim().length > 0 ? { author: value.author.trim() } : {}),
-      hostPatterns: readStringArrayFromKeys(value, ['hostPatterns', 'host_patterns']),
+      hostPatterns,
+      ...(defaultLaunchUrl ? { defaultLaunchUrl } : {}),
       permissions,
       entry: readEntry(value),
       ...(runtime ? { runtime } : {}),
