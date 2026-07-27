@@ -37,7 +37,7 @@ Put plugins you are actively developing under `workspace/<plugin-id>/`. The dire
 3. Open the studio. It will ask for a directory; choose `workspace/` to let the studio detect local plugins, or choose a single plugin directory.
 4. If the selected directory contains multiple plugins, pick one from the Workspace Plugin dropdown.
 5. Enter a source URL and run `main/index.js`, or switch to Manual JSON and edit a `sampleData` test case.
-6. Preview the plugin renderer in the simulated WebPanel tile.
+6. Preview the plugin renderer in both Light and Dark with the Host Theme control.
 7. Use browser DevTools or the studio console to debug renderer output.
 8. Resize the simulated tile with the size controls or the tile resize handle.
 9. Package the directory as `<plugin-id>.wpp`.
@@ -133,9 +133,9 @@ The renderer entry is loaded as an ES module inside the preview iframe. It can e
 
 ```js
 export default {
-  render({ root, manifest, sampleData, host }) {
+  render({ root, manifest, sampleData, theme, host }) {
     host.log('render', manifest.id);
-    root.innerHTML = `<h1>${manifest.name}</h1>`;
+    root.innerHTML = `<h1 style="color:var(--wpp-color-text)">${manifest.name} · ${theme}</h1>`;
   }
 };
 ```
@@ -148,11 +148,14 @@ The preview context contains:
 - `data`: alias for `sampleData`.
 - `tile`: current simulated tile width and height in pixels.
 - `sourceUrl`: the URL entered in the Runtime panel, also used as the base for relative links.
+- `theme`: the host's current `"light" | "dark"` value. The same value is available as `host.theme` and `root.dataset.theme`; plugins should implement both palettes and must not persist a separate theme preference.
 - `host.log(...)`, `host.warn(...)`: messages forwarded to the studio console.
 - `host.setTitle(title)`: updates the simulated tile title.
 - `host.setStatus(status)`: emits a status message to the studio console.
 - `host.openWindow(url)`: requests the host to open a new window. The manifest must include the `openWindow` permission.
 - `host.openUrl(url)`: compatibility alias for `host.openWindow(url)`.
+
+The iframe also defines `--wpp-color-background`, `--wpp-color-surface`, `--wpp-color-text`, `--wpp-color-muted`, `--wpp-color-border`, and `--wpp-color-accent`. Prefer these tokens for normal palette work. The distributable `examples/simple-widget` demonstrates this contract.
 
 The desktop host also intercepts `window.open(...)`, `target="_blank"` links, and links marked with `data-wpp-open-window`; all of them require `openWindow` permission. Prefer `host.openWindow(url)` in plugin code so the behavior is explicit.
 

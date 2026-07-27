@@ -1,6 +1,7 @@
 import type { SitePluginManifest } from './pluginManifest';
 
 export type PreviewLogLevel = 'info' | 'warn' | 'error' | 'ready';
+export type PluginTheme = 'light' | 'dark';
 
 export interface PreviewLogMessage {
   level: PreviewLogLevel;
@@ -18,6 +19,7 @@ export interface BuildPreviewSrcDocOptions {
     width: number;
     height: number;
   };
+  theme: PluginTheme;
 }
 
 function htmlJson(value: unknown): string {
@@ -30,12 +32,14 @@ export function buildPreviewSrcDoc({
   sampleData,
   sourceUrl,
   tile,
+  theme,
 }: BuildPreviewSrcDocOptions): string {
   const manifestJson = htmlJson(manifest);
   const sampleJson = htmlJson(sampleData);
   const sourceUrlJson = htmlJson(sourceUrl);
   const tileJson = htmlJson(tile);
   const rendererUrlLiteral = JSON.stringify(rendererUrl);
+  const themeLiteral = JSON.stringify(theme);
 
   return `<!doctype html>
 <html lang="en">
@@ -48,6 +52,22 @@ export function buildPreviewSrcDoc({
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: transparent;
         color: #172033;
+        --wpp-color-background: #ffffff;
+        --wpp-color-surface: #f8fafc;
+        --wpp-color-text: #172033;
+        --wpp-color-muted: #64748b;
+        --wpp-color-border: #dbe3ee;
+        --wpp-color-accent: #2563eb;
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        color: #e5edf7;
+        --wpp-color-background: #0b1220;
+        --wpp-color-surface: #111c2f;
+        --wpp-color-text: #e5edf7;
+        --wpp-color-muted: #94a3b8;
+        --wpp-color-border: #334155;
+        --wpp-color-accent: #60a5fa;
       }
       * {
         box-sizing: border-box;
@@ -60,9 +80,10 @@ export function buildPreviewSrcDoc({
         overflow: hidden;
       }
       body {
+        color: var(--wpp-color-text);
         background:
           radial-gradient(640px 420px at 22% 0%, rgba(77, 152, 255, 0.16), transparent 70%),
-          linear-gradient(150deg, rgba(250, 252, 255, 0.98), rgba(240, 246, 252, 0.92));
+          var(--wpp-color-background);
       }
       #plugin-root {
         width: 100%;
@@ -110,6 +131,19 @@ export function buildPreviewSrcDoc({
         text-align: left;
         white-space: pre-wrap;
       }
+      :root[data-theme="dark"] .wpp-preview-placeholder p,
+      :root[data-theme="dark"] .wpp-preview-error p {
+        color: var(--wpp-color-muted);
+      }
+      :root[data-theme="dark"] .wpp-preview-error {
+        color: #fecaca;
+        background: rgba(69, 10, 10, 0.62);
+      }
+      :root[data-theme="dark"] .wpp-preview-error pre {
+        border-color: rgba(248, 113, 113, 0.28);
+        color: #fecaca;
+        background: rgba(30, 41, 59, 0.82);
+      }
     </style>
   </head>
   <body>
@@ -125,6 +159,9 @@ export function buildPreviewSrcDoc({
       const sourceUrl = JSON.parse(document.getElementById('source-url-json').textContent || '""');
       const tile = JSON.parse(document.getElementById('tile-json').textContent || '{}');
       const rendererUrl = ${rendererUrlLiteral};
+      const theme = ${themeLiteral};
+      document.documentElement.dataset.theme = theme;
+      root.dataset.theme = theme;
       const nativeWindowOpen = window.open.bind(window);
 
       function emit(level, message, details) {
@@ -267,6 +304,7 @@ export function buildPreviewSrcDoc({
         const module = await import(rendererUrl);
         const renderer = module.default ?? module.render ?? module;
         const host = {
+          theme,
           log: (...args) => emit('info', args.map((item) =>
             typeof item === 'string' ? item : JSON.stringify(item)
           ).join(' '), args),
@@ -291,6 +329,7 @@ export function buildPreviewSrcDoc({
           data: sampleData,
           sourceUrl,
           tile,
+          theme,
           host,
         };
 

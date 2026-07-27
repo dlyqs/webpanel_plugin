@@ -143,6 +143,17 @@ The main context includes `manifest`, `sourceUrl`, `sampleData`, `request.operat
 The host includes `log`, `warn`, `setStatus`, `fetch`, `fetchText`, and `fetchJson`.
 The Vite dev/preview server proxies `host.fetch*` requests from Node so local previews are not blocked by browser CORS. Do not call `require()` from main; bundle dependencies into `main/index.js`.
 
+## Theme Contract (Required)
+
+Every new or updated plugin renderer must ship both light and dark appearances by default and follow the host theme. The application is the single source of truth; do not add an independent plugin theme preference or persist a theme inside plugin data.
+
+- The public renderer context exposes `theme: "light" | "dark"`; the same value is available as `host.theme` and `root.dataset.theme`.
+- The host also provides `--wpp-color-background`, `--wpp-color-surface`, `--wpp-color-text`, `--wpp-color-muted`, `--wpp-color-border`, and `--wpp-color-accent` on the iframe document. Prefer these tokens for third-party renderers, and use `theme` only when a component needs explicit branching.
+- Trusted React adapters receive the shared `PluginTheme` value from the tile host, put `data-theme={theme}` on their renderer root, and scope both palettes under that root. Do not infer theme from arbitrary page colors.
+- A trusted legacy-webview adapter must forward the same theme through its isolation/profile bridge and use the narrowest site-supported color-scheme hook; keep remote content behavior site-controlled.
+- Theme changes must update an already-open widget. Keep live runtime state intact when possible; for example, update xterm's theme options without restarting its PTY session.
+- During development, review or preview both `light` and `dark` before delivery. WPP Dev Studio's Host Theme control exercises the same renderer field and CSS variables as the desktop host.
+
 ## Validation
 
 Run static validation before handing off:
@@ -173,6 +184,7 @@ Do not open the browser preview, Browser plugin, or Playwright unless the user e
 - `manifest.json` validates with `pnpm run wpp:validate`.
 - URL-matched plugins include `default_launch_url`; non-URL utility widgets do not need it.
 - Renderer exports a valid render function and handles missing sample fields.
+- Renderer implements both themes and follows `context.theme`/host theme tokens without persisting its own theme.
 - Text and data are escaped before writing HTML strings.
 - Generated `.wpp` excludes `.git`, `node_modules`, `.DS_Store`, and existing `.wpp` files.
 - User-facing notes distinguish Dev Studio preview support from current desktop host execution support.

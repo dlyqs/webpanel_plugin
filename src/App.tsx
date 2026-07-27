@@ -34,6 +34,7 @@ import {
   buildPreviewSrcDoc,
   isPreviewLogMessage,
   type PreviewLogMessage,
+  type PluginTheme,
 } from './pluginPreview';
 import { executePluginMain, type PluginMainRuntimeResult } from './pluginMainRuntime';
 import { getDefaultSampleCase, SAMPLE_CASES } from './sampleCases';
@@ -160,6 +161,7 @@ function App() {
   const [sampleCaseId, setSampleCaseId] = useState(getDefaultSampleCase().id);
   const [sampleJson, setSampleJson] = useState(() => JSON.stringify(getDefaultSampleCase().data, null, 2));
   const [tileSize, setTileSize] = useState<TileSize>(DEFAULT_TILE_SIZE);
+  const [theme, setTheme] = useState<PluginTheme>('light');
   const [packageBusy, setPackageBusy] = useState(false);
   const [packageResult, setPackageResult] = useState<PackagedPluginDirectory | null>(null);
   const [packageError, setPackageError] = useState<string | null>(null);
@@ -262,6 +264,7 @@ function App() {
       sampleData: effectiveSampleData,
       sourceUrl,
       tile: tileSize,
+      theme,
     });
   }, [
     dataMode,
@@ -274,6 +277,7 @@ function App() {
     sourceUrl,
     previewVersion,
     tileSize,
+    theme,
   ]);
 
   const runMain = useCallback(async () => {
@@ -602,6 +606,15 @@ function App() {
                 onClick={() => setDataMode('manual')}
               >
                 Manual JSON
+              </button>
+            </div>
+            <label className="field-label">Host Theme</label>
+            <div className="mode-switch" role="group" aria-label="Host theme">
+              <button type="button" className={theme === 'light' ? 'is-active' : ''} onClick={() => setTheme('light')}>
+                Light
+              </button>
+              <button type="button" className={theme === 'dark' ? 'is-active' : ''} onClick={() => setTheme('dark')}>
+                Dark
               </button>
             </div>
             <label className="field-label" htmlFor="source-url">

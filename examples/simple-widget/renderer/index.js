@@ -1,12 +1,12 @@
 export default {
-  render({ root, manifest, sampleData, host }) {
+  render({ root, manifest, sampleData, theme, host }) {
     const title = sampleData?.title || manifest.name;
     const text = sampleData?.text || 'Edit sampleData to preview your own plugin state.';
     const items = Array.isArray(sampleData?.items) ? sampleData.items : [];
     const outcomes = Array.isArray(sampleData?.outcomes) ? sampleData.outcomes : [];
 
     host.setTitle(title);
-    host.log('render', { pluginId: manifest.id, title });
+    host.log('render', { pluginId: manifest.id, title, theme });
 
     root.innerHTML = `
       <style>
@@ -16,7 +16,8 @@ export default {
           grid-template-rows: auto minmax(0, 1fr);
           gap: 14px;
           padding: 18px;
-          color: #172033;
+          color: var(--wpp-color-text);
+          background: var(--wpp-color-background);
         }
         .simple-widget header {
           display: flex;
@@ -33,8 +34,8 @@ export default {
           flex: 0 0 auto;
           padding: 5px 8px;
           border-radius: 999px;
-          background: #e6f4ef;
-          color: #12604a;
+          background: color-mix(in srgb, var(--wpp-color-accent) 14%, transparent);
+          color: var(--wpp-color-accent);
           font-size: 12px;
           font-weight: 700;
         }
@@ -47,7 +48,7 @@ export default {
         }
         .simple-widget p {
           margin: 0;
-          color: #475569;
+          color: var(--wpp-color-muted);
           line-height: 1.55;
         }
         .simple-widget .row {
@@ -55,9 +56,9 @@ export default {
           grid-template-columns: minmax(0, 1fr) auto;
           gap: 10px;
           padding: 10px;
-          border: 1px solid rgba(125, 143, 166, 0.28);
+          border: 1px solid var(--wpp-color-border);
           border-radius: 8px;
-          background: rgba(255, 255, 255, 0.72);
+          background: var(--wpp-color-surface);
         }
         .simple-widget strong,
         .simple-widget span {
